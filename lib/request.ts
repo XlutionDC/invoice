@@ -1,0 +1,1 @@
+export function checkWrite(req:Request){if(!req.headers.get('content-type')?.startsWith('application/json'))throw new Error('Format permintaan tidak valid.');const origin=req.headers.get('origin');if(origin&&new URL(origin).host!==new URL(req.url).host)throw new Error('Permintaan dari alamat lain tidak diizinkan.');}

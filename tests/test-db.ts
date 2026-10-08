@@ -1,0 +1,5 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync,readdirSync} from 'node:fs';
+export const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON;');for(const file of readdirSync('drizzle').filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync('drizzle/'+file,'utf8'));
+class Statement{constructor(private query:string,private args:any[]=[]){ }bind(...args:any[]){return new Statement(this.query,args);}async first(){return sqlite.prepare(this.query).get(...this.args)||null;}async all(){return {results:sqlite.prepare(this.query).all(...this.args)};}async run(){const r=sqlite.prepare(this.query).run(...this.args);return {meta:{changes:Number(r.changes)}};}}
+export function sqlDb(){return {prepare:(q:string)=>new Statement(q),batch:async(statements:Statement[])=>{sqlite.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());sqlite.exec('COMMIT');return results;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};}

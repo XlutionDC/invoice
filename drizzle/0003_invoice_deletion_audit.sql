@@ -1,0 +1,6 @@
+DROP TRIGGER invoice_changed_audit;
+--> statement-breakpoint
+CREATE TRIGGER invoice_changed_audit AFTER UPDATE OF version ON invoices WHEN NEW.version > OLD.version BEGIN
+ INSERT INTO audit_events (id,invoice_id,shop_id,action,actor_id,actor_name,created_at,details)
+ VALUES (NEW.operation_id,NEW.id,NEW.shop_id,CASE WHEN NEW.state='deleted' THEN 'deleted' WHEN NEW.state='cancelled' AND OLD.state='active' THEN 'cancelled' ELSE 'edited' END,NEW.last_actor_id,NEW.last_actor_name,NEW.updated_at,json_object('before',json_object('id',OLD.id,'shop_id',OLD.shop_id,'kind',OLD.kind,'number',OLD.number,'date',OLD.date,'due_date',OLD.due_date,'customer_name',OLD.customer_name,'customer_contact',OLD.customer_contact,'items',OLD.items,'discount',OLD.discount,'shipping',OLD.shipping,'total',OLD.total,'notes',OLD.notes,'state',OLD.state,'version',OLD.version),'after',json_object('id',NEW.id,'shop_id',NEW.shop_id,'kind',NEW.kind,'number',NEW.number,'date',NEW.date,'due_date',NEW.due_date,'customer_name',NEW.customer_name,'customer_contact',NEW.customer_contact,'items',NEW.items,'discount',NEW.discount,'shipping',NEW.shipping,'total',NEW.total,'notes',NEW.notes,'state',NEW.state,'version',NEW.version),'reason',NEW.change_reason));
+END;

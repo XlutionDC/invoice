@@ -1,0 +1,10 @@
+import {checkWrite} from '@/lib/request';
+import {getActor,scope,apiFailure,ApiError} from '@/lib/access';
+import {listInvoices,listPayments,findInvoice,saveInvoice,updateInvoice,cancelInvoice,deleteInvoice} from '@/lib/repository';
+import {validateDraft,uuid,cleanText} from '@/lib/domain';
+export const dynamic='force-dynamic';
+export async function GET(req:Request){try{const actor=await getActor(req),params=new URL(req.url).searchParams,id=params.get('id');if(id)return Response.json({invoice:await findInvoice(uuid(id),actor)},{headers:{'Cache-Control':'no-store'}});const ids=scope(actor,params.get('shop'));const [invoices,payments]=await Promise.all([listInvoices(ids),listPayments(ids)]);return Response.json({invoices,payments},{headers:{'Cache-Control':'no-store'}});}catch(e){return apiFailure(e);}}
+export async function POST(req:Request){try{checkWrite(req);const actor=await getActor(req),d=validateDraft(await req.json());return Response.json({invoice:await saveInvoice(d,actor)},{status:201});}catch(e){return apiFailure(e);}}
+export async function PATCH(req:Request){try{checkWrite(req);const actor=await getActor(req),v:any=await req.json(),id=uuid(v.id),op=uuid(v.operation_id),reason=cleanText(v.reason,500,'Alasan perubahan',true);if(!Number.isSafeInteger(v.version)||v.version<1)throw new ApiError('Versi invoice tidak valid.');if(v.action==='cancel')return Response.json({invoice:await cancelInvoice(id,v.version,op,reason,actor)});if(v.action!=='edit')throw new ApiError('Aksi tidak dikenal.');const d=validateDraft(v.draft);if(d.id!==id)throw new ApiError('ID invoice tidak cocok.');return Response.json({invoice:await updateInvoice(d,v.version,op,reason,actor)});}catch(e){return apiFailure(e);}}
+
+export async function DELETE(req:Request){try{checkWrite(req);const actor=await getActor(req),v:any=await req.json();if(v.confirm!==true)throw new ApiError('Konfirmasi penghapusan diperlukan.');if(!Number.isSafeInteger(v.version)||v.version<1)throw new ApiError('Versi invoice tidak valid.');await deleteInvoice(uuid(v.id),v.version,uuid(v.operation_id),actor);return Response.json({deleted:true});}catch(e){return apiFailure(e);}}
