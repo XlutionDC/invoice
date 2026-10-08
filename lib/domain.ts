@@ -6,8 +6,9 @@ export const shops = [
 export const products = ['Brosur','Kartu nama','Stiker','Spanduk','Flyer','Booklet','Poster','Placemat','Kartu ucapan','Paper belt','Lainnya'];
 export type Item = {product:string;description:string;qty:number;unit:string;price:number};
 export type Draft = {id:string;shop_id:string;kind:'invoice'|'quotation';date:string;due_date:string;customer_name:string;customer_contact:string;items:Item[];discount:number;shipping:number;notes:string};
-export type Payment = {id:string;invoice_id:string;date:string;amount:number;method:string;reference:string;actor_name?:string;kind?:'receipt'|'refund'};
-export type Invoice = Draft & {number:string;total:number;paid:number;created_at:string;actor_name:string;payments?:Payment[];state?:'active'|'cancelled';version?:number;cancelled_reason?:string;cancelled_at?:string;audit?:AuditEvent[]};
+export type PaymentProof={file_name:string;content_type:string;size:number;created_at:string;actor_name:string};
+export type Payment = {proof?:PaymentProof;id:string;invoice_id:string;date:string;amount:number;method:string;reference:string;actor_name?:string;kind?:'receipt'|'refund'};
+export type Invoice = Draft & {file_date?:string;file_seq?:number;number:string;total:number;paid:number;created_at:string;actor_name:string;payments?:Payment[];state?:'active'|'cancelled';version?:number;cancelled_reason?:string;cancelled_at?:string;audit?:AuditEvent[]};
 export type AuditEvent={id:string;invoice_id:string|null;shop_id:string|null;action:string;actor_name:string;created_at:string;details:any;number?:string};
 export type AccessProfile={isOwner:boolean;shops:string[];configured?:string[]};
 export type Member={email:string;name:string;role:string;shops:string[];user_id?:string|null};
@@ -39,8 +40,7 @@ export function validatePayment(v:any):Payment {if(!v||!validDate(v.date))throw 
 export const paymentValue=(p:Payment)=>p.kind==='refund'?-p.amount:p.amount;
 export function salesSummary(invoices:Invoice[],payments:Payment[],month:string){const active=invoices.filter(i=>i.kind==='invoice'&&i.state!=='cancelled');return {sales:active.filter(i=>i.date.startsWith(month)).reduce((a,i)=>a+i.total,0),cash:payments.filter(p=>p.date.startsWith(month)).reduce((a,p)=>a+paymentValue(p),0),receivables:active.reduce((a,i)=>a+Math.max(0,i.total-i.paid),0)};}
 
-export function pdfFilename(d:Pick<Draft,'shop_id'|'date'|'customer_name'>){
+export function pdfFilename(d:Pick<Draft,'shop_id'> & {file_date?:string;file_seq?:number}){
  const store=d.shop_id==='cetakyuk'?'CetakYuk':shops.find(s=>s.id===d.shop_id)?.name||'Invoice';
- const customer=d.customer_name.normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'').slice(0,100)||'Customer';
- return `${store}-${d.date}-${customer}.pdf`;
+ return `${store}-${d.file_date||today()}-${d.file_seq?String(d.file_seq).padStart(3,'0'):'PRATINJAU'}.pdf`;
 }

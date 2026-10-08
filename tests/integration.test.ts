@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {setUser,type ChatGPTUser} from './test-auth';
-import {sqlite} from './test-db';
+import {sqlite,storedProofs,setProofStorageFailure} from './test-db';
 import * as invoices from '../app/api/invoices/route';
 import * as payments from '../app/api/payments/route';
 import * as pdf from '../app/api/pdf/route';
@@ -10,7 +10,8 @@ import * as audit from '../app/api/audit/route';
 import * as profile from '../app/api/profile/route';
 import * as passwords from '../app/api/store-password/route';
 import * as sessions from '../app/api/store-session/route';
-import {salesSummary,pdfFilename,type Invoice} from '../lib/domain';
+import * as proofs from '../app/api/payment-proof/route';
+import {salesSummary,pdfFilename,today,type Invoice} from '../lib/domain';
 const owner={userId:'owner-site-id',email:'daniel.cjohan@gmail.com',displayName:'Owner',fullName:null};const employee={userId:'staff-site-id',email:'staff@example.test',displayName:'Staff',fullName:null};
 const cookies=new Map<string,string>();let current:ChatGPTUser|null=null;function act(u:ChatGPTUser|null){current=u;setUser(u);}
 const req=(path:string,method='GET',data?:any,cookie?:string)=>new Request('https://app.test'+path,{method,headers:{...(data||method==='DELETE'?{'Content-Type':'application/json','Origin':'https://app.test'}:{}),Cookie:cookie??cookies.get(current?.userId||'')??''},body:data?JSON.stringify(data):undefined});
@@ -51,11 +52,26 @@ async function run(){console.error=()=>{};act(null);await json(await invoices.GE
  assert.ok(!(await json(await invoices.GET(req('/api/invoices?shop=luxora')))).invoices.some((i:Invoice)=>i.id===sample.id));
  assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM audit_events WHERE invoice_id=? AND action='deleted'").get(sample.id)!.c,1);
  const following=(await json(await invoices.POST(req('/api/invoices','POST',draft('luxora'))),201)).invoice;assert.notEqual(following.number,sample.number);
- const namedPdf=await pdf.GET(req('/api/pdf?id='+following.id));assert.equal(namedPdf.status,200);assert.ok(namedPdf.headers.get('Content-Disposition')?.includes('Luxora-2026-10-08-Customer.pdf'));assert.ok((await namedPdf.arrayBuffer()).byteLength>100);
- const previewPdf=await pdf.POST(req('/api/pdf','POST',{...draft('luxora'),customer_name:'José'}));assert.equal(previewPdf.status,200);assert.ok(previewPdf.headers.get('Content-Disposition')?.includes('Jos%C3%A9.pdf'));
- assert.equal(pdfFilename({shop_id:'luxora',date:'2026-10-08',customer_name:'Daniel'}),'Luxora-2026-10-08-Daniel.pdf');
- assert.equal(pdfFilename({shop_id:'cetakyuk',date:'2026-10-08',customer_name:'A/B: C'}),'CetakYuk-2026-10-08-A B C.pdf');
- assert.equal(pdfFilename({shop_id:'lancar-jaya',date:'2026-10-08',customer_name:'Kezia'}),'Lancar Jaya Printing-2026-10-08-Kezia.pdf');
+ const namedPdf=await pdf.GET(req('/api/pdf?id='+following.id));assert.equal(namedPdf.status,200);assert.ok(namedPdf.headers.get('Content-Disposition')?.includes(pdfFilename(following)));assert.ok((await namedPdf.arrayBuffer()).byteLength>100);
+ const previewPdf=await pdf.POST(req('/api/pdf','POST',{...draft('luxora'),customer_name:'José'}));assert.equal(previewPdf.status,200);assert.ok(previewPdf.headers.get('Content-Disposition')?.includes('-PRATINJAU.pdf'));
+ assert.equal(pdfFilename({shop_id:'luxora',file_date:'2026-10-08',file_seq:1}),'Luxora-2026-10-08-001.pdf');
+ assert.equal(pdfFilename({shop_id:'cetakyuk',file_date:'2026-10-08',file_seq:12}),'CetakYuk-2026-10-08-012.pdf');
+ assert.equal(pdfFilename({shop_id:'lancar-jaya',file_date:'2026-10-08',file_seq:1000}),'Lancar Jaya Printing-2026-10-08-1000.pdf');
+ assert.equal(following.file_date,today());assert.ok(following.file_seq>sample.file_seq);assert.equal(a.file_seq,1);assert.equal(b.file_seq,1);
+ const backdated=(await json(await invoices.POST(req('/api/invoices','POST',{...draft('luxora'),date:'2025-01-01'})),201)).invoice;assert.equal(backdated.file_date,today());assert.ok(backdated.file_seq>following.file_seq);
+ // Existing invoice filenames use creation day, remain stable after editing, and never reset on deletion.
+ sqlite.prepare('UPDATE invoices SET file_date=NULL,file_seq=NULL WHERE id=?').run(sample.id);const legacy=sqlite.prepare("SELECT COUNT(*) c FROM invoices WHERE shop_id='luxora' AND date(created_at,'+7 hours')=?").get(today())!;const next=(await json(await invoices.POST(req('/api/invoices','POST',draft('luxora'))),201)).invoice;assert.ok(next.file_seq>Number(legacy.c));
+ const upload=(id:string,bytes:Uint8Array,name='transfer.png',origin='https://app.test')=>{const data=new FormData();data.append('payment_id',id);data.append('file',new Blob([bytes as any]),name);return new Request('https://app.test/api/payment-proof',{method:'POST',headers:{Origin:origin,Cookie:cookies.get(current?.userId||'')||''},body:data});};
+ const png=new Uint8Array([137,80,78,71,13,10,26,10,1,2,3]);
+ await json(await proofs.POST(upload(pay.id,png,'transfer.png','https://evil.test')),403);
+ await json(await proofs.POST(upload(pay.id,new Uint8Array([60,104,116,109,108]),'fake.png')),400);
+ await json(await proofs.POST(upload(pay.id,new Uint8Array(5*1024*1024+1),'huge.pdf')),413);
+ setProofStorageFailure(true);await json(await proofs.POST(upload(pay.id,png)),400);setProofStorageFailure(false);assert.equal(sqlite.prepare('SELECT COUNT(*) c FROM payment_proofs').get()!.c,0);
+ let proven=(await json(await proofs.POST(upload(pay.id,png)))).invoice;assert.equal(proven.payments.find((p:any)=>p.id===pay.id).proof.file_name,'transfer.png');assert.equal(storedProofs.size,1);
+ await json(await proofs.POST(upload(pay.id,png)));assert.equal(storedProofs.size,1);await json(await proofs.POST(upload(pay.id,new Uint8Array([255,216,255,1]),'changed.jpg')),409);
+ const proofResponse=await proofs.GET(req('/api/payment-proof?payment_id='+pay.id));assert.equal(proofResponse.status,200);assert.equal(proofResponse.headers.get('Content-Type'),'image/png');assert.equal((await proofResponse.arrayBuffer()).byteLength,png.length);assert.equal(sqlite.prepare("SELECT COUNT(*) c FROM audit_events WHERE action='proof_attached' AND invoice_id=?").get(a.id)!.c,1);
+ act(employee);await login('lancar-jaya');await json(await proofs.GET(req('/api/payment-proof?payment_id='+pay.id)),404);await json(await proofs.POST(upload(pay.id,png)),404);act(owner);
+ console.log('PASS: proof uploads, signature/size/origin validation, failed storage recovery, immutable/idempotent evidence, private access, audit and daily PDF sequences.');
  console.log('PASS: deletion confirmation, owner/shop permissions, stale versions, refund history, hidden deleted documents, preserved numbering/audit, and safe PDF filenames.');
  // Rotation immediately invalidates another user's existing store session.
  await json(await passwords.POST(req('/api/store-password','POST',{shop_id:'lancar-jaya',password:'New-LJP-Password!',confirm:'New-LJP-Password!'})));act(employee);assert.deepEqual((await json(await profile.GET(req('/api/profile')))).profile.shops,[]);await json(await invoices.GET(req('/api/invoices?id='+b.id)),404);await json(await sessions.POST(req('/api/store-session','POST',{shop_id:'lancar-jaya',password:pwd['lancar-jaya']})),403);await login('lancar-jaya','New-LJP-Password!');sqlite.prepare('UPDATE store_sessions SET expires_at=0 WHERE user_id=?').run(employee.userId);await json(await invoices.GET(req('/api/invoices?shop=lancar-jaya')),403);

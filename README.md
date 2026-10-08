@@ -1,8 +1,6 @@
 # Luxora Invoice
 
-Source snapshot aplikasi yang dipublikasikan pada 8 Oktober 2026, termasuk hapus invoice tanpa riwayat pembayaran dan nama PDF toko-tanggal-customer.
-
-Baca **DEPLOYMENT_HANDOFF.md** sebelum memasang di hosting di luar ChatGPT Sites. Repo ini berisi kode, aset dan migration, bukan database produksi atau password toko.
+Source terbaru dengan bukti pembayaran privat dan nama PDF harian. Baca DEPLOYMENT_HANDOFF.md sebelum memasang di hosting di luar Sites. Database produksi dan password toko tidak disertakan.
 
 # vinext-starter
 
@@ -160,3 +158,9 @@ Owner mengatur tiga password berbeda melalui **Atur password toko**, minimal 10 
 Password disimpan sebagai PBKDF2-HMAC-SHA256 dengan salt acak; sesi berupa token acak yang hanya hash-nya disimpan, terikat ke identitas Site, toko dan versi password. Cookie HttpOnly/Secure dengan Partitioned mendukung tampilan tertanam. Sesi berlaku maksimal 12 jam. Pilih toko lain menutup sesi saat ini. Mengubah password mengeluarkan seluruh sesi toko tersebut. Maksimal 5 percobaan per akun/toko per jendela 15 menit. Seluruh data, transaksi dan PDF tetap diperiksa di server; owner juga harus membuka sesi toko untuk data toko itu. Tidak ada API rekap gabungan.
 
 **Customer** mengelompokkan invoice berdasarkan nama dan kontak yang sama pada toko aktif, menampilkan tagihan aktif, dan dapat menyalin order menjadi invoice baru tanpa menyalin nomor, pembayaran atau status batal. Riwayat sebelum fitur pencatatan aktif tidak direkonstruksi; catatan pembuatan dan pembayaran lama ditampilkan dari rekaman asli. Password dan hash tidak dicatat di riwayat.
+
+### Bukti pembayaran dan nama PDF harian
+
+Bukti JPG/PNG/PDF maksimal 5 MB per pembayaran disimpan privat di R2 (binding BUCKET), metadata dan jejak upload di D1. Pilih bukti saat mencatat pembayaran, atau lampirkan ke pembayaran lama dari detail invoice. Satu bukti per pembayaran, tidak dapat ditimpa/dihapus lewat UI. Sesi toko diperiksa juga saat membuka file. Lampiran bukan verifikasi mutasi bank. Pembayaran yang belum punya bukti diberi label jelas. Jika upload gagal setelah pembayaran tersimpan, UI menjelaskan bahwa pembayaran tetap tersimpan dan bukti dapat dilampirkan dari riwayat.
+
+Nama PDF sekarang Nama toko-YYYY-MM-DD-001.pdf. Tanggal adalah hari invoice dibuat (Asia/Jakarta), terpisah dari tanggal transaksi yang bisa diubah. Nomor harian dihitung per toko, termasuk invoice/penawaran, dan tidak dipakai ulang setelah penghapusan. Nomor dokumen bulanan yang tercetak di PDF dipertahankan. Dokumen lama memakai tanggal pembuatan dan urutan deterministik; preview yang belum disimpan memakai akhiran PRATINJAU.

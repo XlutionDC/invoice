@@ -13,3 +13,5 @@ export function getDb() {
 }
 
 export function sqlDb(){if(!env.DB)throw new Error('Penyimpanan belum tersedia. Coba lagi sebentar.');return env.DB;}
+
+export function proofBucket(){if(!env.BUCKET)throw new Error('Penyimpanan bukti belum tersedia. Coba lagi sebentar.');return env.BUCKET;}
